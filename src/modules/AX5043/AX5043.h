@@ -48,6 +48,7 @@
 */
 // AX5043 register map                             
 #define RADIOLIB_AX5043_REG_SILICON_REVISION                   0x000
+#define RADIOLIB_AX5043_REG_PWRMODE                            0x002
 #define RADIOLIB_AX5043_REG_MODULATION                         0x010
 #define RADIOLIB_AX5043_REG_TXRATE                             0x165
 #define RADIOLIB_AX5043_REG_FSKDEV                             0x161
