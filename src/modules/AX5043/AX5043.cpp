@@ -1,7 +1,7 @@
 #include "AX5043.h"
 #if !defined(RADIOLIB_EXCLUDE_AX5043)
 
-AX5043::AX5043(Module* mod) {
+AX5043::AX5043(Module* mod) : PhysicalLayer(RADIOLIB_AX5043_FREQUENCY_STEP_SIZE, RADIOLIB_AX5043_MAX_PACKET_LENGTH) {
   /*
     Constructor implementation MUST assign the provided "mod" pointer to the private "_mod" pointer.
   */
@@ -82,4 +82,65 @@ int16_t AX5043::beginAFSK(float freq) {
     For example, reading a version register
   */
 }
+
+
+
+int16_t AX5043::transmit(uint8_t* data, size_t len, uint8_t addr) {
+  return 0;
+}
+
+
+int16_t AX5043::receive(uint8_t* data, size_t len) {
+  return 0;
+}
+
+
+int16_t AX5043::standby() {
+  return 0;
+}
+
+int16_t AX5043::transmitDirect(uint32_t frf = 0) {
+  return 0;
+}
+
+int16_t AX5043::receiveDirect() {
+  return 0;
+}
+
+int16_t AX5043::startTransmit(uint8_t* data, size_t len, uint8_t addr = 0) {
+  return 0;
+}
+
+int16_t AX5043::readData(uint8_t* data, size_t len) {
+  return 0;
+}
+
+int16_t AX5043::setFrequencyDeviation(float freqDev) {
+  return 0;
+}
+
+size_t AX5043::getPacketLength(bool update = true) { 
+  return 0;
+}
+
+int16_t AX5043::setEncoding(uint8_t encoding) { 
+  return 0;
+}
+
+int16_t AX5043::setDataShaping(uint8_t sh) { 
+  return 0;
+}
+
+void AX5043::readBit(RADIOLIB_PIN_TYPE pin) { 
+  return;
+}
+
+void AX5043::setDirectAction(void (*func)(void)) {
+  return;
+}
+
+uint8_t AX5043::randomByte() {
+  return 0xA7; // It's random I swear!
+}
+
 #endif

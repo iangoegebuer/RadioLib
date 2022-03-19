@@ -32,6 +32,9 @@
 */
 //#include "../../protocols/PhysicalLayer/PhysicalLayer.h"
 
+#define RADIOLIB_AX5043_FREQUENCY_STEP_SIZE                    16777216.0/16e6
+#define RADIOLIB_AX5043_MAX_PACKET_LENGTH                      255
+
 /*
   Register map
   Definition of SPI register map SHOULD be placed here. The register map SHOULD have two parts:
@@ -95,7 +98,7 @@ class AX5043 : public PhysicalLayer {
     using PhysicalLayer::receive;
     using PhysicalLayer::startTransmit;
     using PhysicalLayer::readData;
-    
+
     /*
       Constructor MUST have only one parameter "Module* mod".
       The class MAY implement additional overloaded constructors.
@@ -112,11 +115,112 @@ class AX5043 : public PhysicalLayer {
     int16_t begin();
     int16_t beginAFSK(float freq = 144.390e6);
     int16_t getChipRevision();
-
-    /*
-      The class MAY implement additional methods.
-      All implemented methods SHOULD return the status as int16_t type.
+    
+/*!
+      \brief Binary transmit method. Will transmit arbitrary binary data up to 255 bytes long using %LoRa or up to 63 bytes using FSK modem.
+      For overloads to transmit Arduino String or C-string, see PhysicalLayer::transmit.
+      \param data Binary data that will be transmitted.
+      \param len Length of binary data to transmit (in bytes).
+      \param addr Node address to transmit the packet to. Only used in FSK mode.
+      \returns \ref status_codes
     */
+    int16_t transmit(uint8_t* data, size_t len, uint8_t addr = 0) override;
+
+    /*!
+      \brief Binary receive method. Will attempt to receive arbitrary binary data up to 255 bytes long using %LoRa or up to 63 bytes using FSK modem.
+      For overloads to receive Arduino String, see PhysicalLayer::receive.
+      \param data Pointer to array to save the received binary data.
+      \param len Number of bytes that will be received. Must be known in advance for binary transmissions.
+      \returns \ref status_codes
+    */
+    int16_t receive(uint8_t* data, size_t len) override;
+
+    /*!
+      \brief Sets the %LoRa module to standby.
+      \returns \ref status_codes
+    */
+    int16_t standby() override;
+
+    /*!
+      \brief Enables direct transmission mode on pins DIO1 (clock) and DIO2 (data).
+      While in direct mode, the module will not be able to transmit or receive packets. Can only be activated in FSK mode.
+      \param frf 24-bit raw frequency value to start transmitting at. Required for quick frequency shifts in RTTY.
+      \returns \ref status_codes
+    */
+    int16_t transmitDirect(uint32_t frf = 0) override;
+
+    /*!
+      \brief Enables direct reception mode on pins DIO1 (clock) and DIO2 (data).
+      While in direct mode, the module will not be able to transmit or receive packets. Can only be activated in FSK mode.
+      \returns \ref status_codes
+    */
+    int16_t receiveDirect() override;
+
+    /*!
+      \brief Interrupt-driven binary transmit method. Will start transmitting arbitrary binary data up to 255 bytes long using %LoRa or up to 63 bytes using FSK modem.
+      \param data Binary data that will be transmitted.
+      \param len Length of binary data to transmit (in bytes).
+      \param addr Node address to transmit the packet to. Only used in FSK mode.
+      \returns \ref status_codes
+    */
+    int16_t startTransmit(uint8_t* data, size_t len, uint8_t addr = 0) override;
+
+    /*!
+      \brief Reads data that was received after calling startReceive method. This method reads len characters.
+      \param data Pointer to array to save the received binary data.
+      \param len Number of bytes that will be read. When set to 0, the packet length will be retreived automatically.
+      When more bytes than received are requested, only the number of bytes requested will be returned.
+      \returns \ref status_codes
+    */
+    int16_t readData(uint8_t* data, size_t len) override;
+
+    /*!
+      \brief Sets FSK frequency deviation from carrier frequency. Allowed values depend on bit rate setting and must be lower than 200 kHz. Only available in FSK mode.
+      \param freqDev Frequency deviation to be set (in kHz).
+      \returns \ref status_codes
+    */
+    int16_t setFrequencyDeviation(float freqDev) override;
+
+    /*!
+      \brief Query modem for the packet length of received payload.
+      \param update Update received packet length. Will return cached value when set to false.
+      \returns Length of last received packet in bytes.
+    */
+    size_t getPacketLength(bool update = true) override;
+
+    /*!
+      \brief Sets transmission encoding. Only available in FSK mode.
+       Allowed values are RADIOLIB_ENCODING_NRZ, RADIOLIB_ENCODING_MANCHESTER and RADIOLIB_ENCODING_WHITENING.
+      \param encoding Encoding to be used.
+      \returns \ref status_codes
+    */
+    int16_t setEncoding(uint8_t encoding) override;
+
+    /*!
+      \brief Sets Gaussian filter bandwidth-time product that will be used for data shaping. Only available in FSK mode with FSK modulation.
+      Allowed values are RADIOLIB_SHAPING_0_3, RADIOLIB_SHAPING_0_5 or RADIOLIB_SHAPING_1_0. Set to RADIOLIB_SHAPING_NONE to disable data shaping.
+      \param sh Gaussian shaping bandwidth-time product that will be used for data shaping
+      \returns \ref status_codes
+    */
+    int16_t setDataShaping(uint8_t sh) override;
+
+    /*!
+      \brief Function to read and process data bit in direct reception mode.
+      \param pin Pin on which to read.
+    */
+    void readBit(RADIOLIB_PIN_TYPE pin);
+
+    /*!
+      \brief Set interrupt service routine function to call when data bit is receveid in direct mode.
+      \param func Pointer to interrupt service routine.
+    */
+    void setDirectAction(void (*func)(void));
+
+    /*!
+     \brief Get one truly random byte from RSSI noise.
+     \returns TRNG byte.
+   */
+    uint8_t randomByte();
 
 #if !defined(RADIOLIB_GODMODE)
   private:
