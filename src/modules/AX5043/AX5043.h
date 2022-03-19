@@ -55,6 +55,12 @@
 #define RADIOLIB_AX5043_REG_AFSKMARK                           0x112
 #define RADIOLIB_AX5043_REG_AFSKSPACE                          0x110
 #define RADIOLIB_AX5043_REG_FREQA                              0x037
+#define RADIOLIB_AX5043_REG_TXPWRCOEFFB                        0x16B
+
+#define RADIOLIB_AX5043_REG_PLLLOOP                            0x030
+#define RADIOLIB_AX5043_REG_PLLCPI                             0x031
+#define RADIOLIB_AX5043_REG_PLLRANGEA                          0x033
+#define RADIOLIB_AX5043_REG_PLLVCODIV                          0x032
 
 // RADIOLIB_AX5043_REG_MODULATION                                              MSB   LSB   DESCRIPTION
 #define RADIOLIB_AX5043_MODULATION_AFSK                        0b00001010  //  7     0     <description>
@@ -238,6 +244,7 @@ class AX5043 : public PhysicalLayer {
       Usually, these are variables for saving module configuration, or methods that do not have to be exposed to the end user.
     */
     int16_t configModulation(uint8_t modulation);
+    int16_t pllRanging();
 };
 
 #endif
