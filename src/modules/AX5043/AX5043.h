@@ -50,17 +50,23 @@
 #define RADIOLIB_AX5043_REG_SILICON_REVISION                   0x000
 #define RADIOLIB_AX5043_REG_PWRMODE                            0x002
 #define RADIOLIB_AX5043_REG_MODULATION                         0x010
-#define RADIOLIB_AX5043_REG_TXRATE                             0x165
+#define RADIOLIB_AX5043_REG_TXRATE                             0x167 // 0x167(LSB) - 0x165(MSB)
 #define RADIOLIB_AX5043_REG_FSKDEV                             0x161
 #define RADIOLIB_AX5043_REG_AFSKMARK                           0x112
 #define RADIOLIB_AX5043_REG_AFSKSPACE                          0x110
-#define RADIOLIB_AX5043_REG_FREQA                              0x037
+#define RADIOLIB_AX5043_REG_FREQA                              0x037 // 0x037(LSB) - 0x034(MSB)
 #define RADIOLIB_AX5043_REG_TXPWRCOEFFB                        0x16B
 
 #define RADIOLIB_AX5043_REG_PLLLOOP                            0x030
 #define RADIOLIB_AX5043_REG_PLLCPI                             0x031
 #define RADIOLIB_AX5043_REG_PLLRANGEA                          0x033
 #define RADIOLIB_AX5043_REG_PLLVCODIV                          0x032
+
+// Unnamed registers
+#define RADIOLIB_AX5043_REG_F34                                0xF34
+#define RADIOLIB_AX5043_REG_F35                                0xF35
+#define RADIOLIB_AX5043_REG_F10                                0xF10
+#define RADIOLIB_AX5043_REG_F11                                0xF11
 
 // RADIOLIB_AX5043_REG_MODULATION                                              MSB   LSB   DESCRIPTION
 #define RADIOLIB_AX5043_MODULATION_AFSK                        0b00001010  //  7     0     <description>
@@ -76,9 +82,9 @@
 // FSKDEV = [ ( f_DEVIATION / f_XTAL ) * 2^24 + 1/2 ]
 // For AFSK
 // FSKDEV = [ ( 0.858785 * f_DEVIATION / f_XTAL ) * 2^24 + 1/2 ]
-#define RADIOLIB_AX5043_FSKDEV_AFSK2                             0x00      //  TYpical deviation of 3khz
-#define RADIOLIB_AX5043_FSKDEV_AFSK1                             0x0A      //  TYpical deviation of 3khz
-#define RADIOLIB_AX5043_FSKDEV_AFSK0                             0x8E      //  TYpical deviation of 3khz
+#define RADIOLIB_AX5043_FSKDEV_AFSK2                           0x00      //  TYpical deviation of 3khz
+#define RADIOLIB_AX5043_FSKDEV_AFSK1                           0x0A      //  TYpical deviation of 3khz
+#define RADIOLIB_AX5043_FSKDEV_AFSK0                           0x8E      //  TYpical deviation of 3khz
 
 // RADIOLIB_AX5043_REG_MODULATION                                              MSB   LSB   DESCRIPTION
 #define RADIOLIB_AX5043_AFSKMARK0                              0x00  
@@ -86,8 +92,37 @@
 #define RADIOLIB_AX5043_AFSKSPACE0                             0x00  
 #define RADIOLIB_AX5043_AFSKSPACE1                             0x25  
 
+// RADIOLIB_AX5043_REG_PLLRANGEA                                              MSB   LSB   DESCRIPTION
+#define RADIOLIB_AX5043_REG_PLLRANGEA_VCORANGE                 0b00001111  //  3     0    ? How much deviation after lock ?
+#define RADIOLIB_AX5043_REG_PLLRANGEA_VCORANGE_RST             0b00001000  //  3     0    Reset value of VCO range
+#define RADIOLIB_AX5043_REG_PLLRANGEA_RNG_START                0b00010000  //  4     4    PLL Ranging start. Cleared when complete
+#define RADIOLIB_AX5043_REG_PLLRANGEA_RNG_ERROR                0b00100000  //  5     5    PLL Ranging error/failed (check frequncy/L_ext)
+#define RADIOLIB_AX5043_REG_PLLRANGEA_PLL_LOCK                 0b01000000  //  6     6    PLL is locked
+#define RADIOLIB_AX5043_REG_PLLRANGEA_STICK_LOCK               0b10000000  //  7     7    PLL lost lock after last read if 0
 
-// TXRATE is split into 3 registers starting at 0x167(LSB) and ending at 0x165(MSB)
+// RADIOLIB_AX5043_REG_F34
+#define RADIOLIB_AX5043_F34_NO_RFDIV                           0x08  //  RFDIV is not used
+#define RADIOLIB_AX5043_F34_RFDIV                              0x28  //  RFDIV used
+
+// RADIOLIB_AX5043_REG_F35
+// 0x10 XTAL/TCXO < 24.8 MHz, (fXTALDIV = 1)
+// 0x11 otherwise             (fXTALDIV = 2)
+#define RADIOLIB_AX5043_F35_XTALDIV_1                          0x10  //  RFDIV is not used
+#define RADIOLIB_AX5043_F35_XTALDIV_2                          0x11  //  RFDIV used
+
+// RADIOLIB_AX5043_REG_F10
+// Set to 0x04 if a TCXO is used. 
+// If a crystal(>43MHz) is used set to 0x0D
+// Set to 0x03 otherwise
+#define RADIOLIB_AX5043_F10_TCXO                               0x04  // TCXO is used
+#define RADIOLIB_AX5043_F10_XTAL_HF                            0x0D  // TXCO + XTAL > 43MHz
+#define RADIOLIB_AX5043_F10_XTAL_LF                            0x03  // "Otherwise"
+
+// RADIOLIB_AX5043_REG_F11
+// Set to 0x07 if a XTAL 
+// Set to 0x00 if a TCXO
+#define RADIOLIB_AX5043_F11_TCXO                               0x00  // TCXO is used
+#define RADIOLIB_AX5043_F11_XTAL                               0x07  // XTAL is used
 
 
 /*
