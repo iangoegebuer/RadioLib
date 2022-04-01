@@ -49,7 +49,11 @@
 // AX5043 register map                             
 #define RADIOLIB_AX5043_REG_SILICON_REVISION                   0x000
 #define RADIOLIB_AX5043_REG_PWRMODE                            0x002
+#define RADIOLIB_AX5043_REG_IRQMASK0                           0x007
+#define RADIOLIB_AX5043_REG_RADIOEVENTMASK0                    0x009
+#define RADIOLIB_AX5043_REG_RADIOEVENTREQ0                     0x00F
 #define RADIOLIB_AX5043_REG_MODULATION                         0x010
+#define RADIOLIB_AX5043_REG_ENCODING                           0x011
 #define RADIOLIB_AX5043_REG_TXRATE                             0x167 // 0x167(LSB) - 0x165(MSB)
 #define RADIOLIB_AX5043_REG_FSKDEV                             0x161
 #define RADIOLIB_AX5043_REG_AFSKMARK                           0x112
@@ -62,15 +66,58 @@
 #define RADIOLIB_AX5043_REG_PLLRANGEA                          0x033
 #define RADIOLIB_AX5043_REG_PLLVCODIV                          0x032
 
+// FIFO registers
+#define RADIOLIB_AX5043_REG_FIFOSTAT                           0x028
+#define RADIOLIB_AX5043_REG_FIFODATA                           0x029
+
 // Unnamed registers
 #define RADIOLIB_AX5043_REG_F34                                0xF34
 #define RADIOLIB_AX5043_REG_F35                                0xF35
 #define RADIOLIB_AX5043_REG_F10                                0xF10
 #define RADIOLIB_AX5043_REG_F11                                0xF11
 
+// RADIOLIB_AX5043_REG_PWRMODE                                                 MSB   LSB   DESCRIPTION
+#define RADIOLIB_AX5043_PWRMODE_FULL_TX                        0x0D  //  7     0     <description>
+#define RADIOLIB_AX5043_PWRMODE_POWERDOWN                      0x00  //  7     0     <description>
+
 // RADIOLIB_AX5043_REG_MODULATION                                              MSB   LSB   DESCRIPTION
 #define RADIOLIB_AX5043_MODULATION_AFSK                        0b00001010  //  7     0     <description>
 #define RADIOLIB_AX5043_MODULATION_FSK                         0b00001000  //  7     0     <description>
+
+// RADIOLIB_AX5043_REG_Encoding                                                MSB   LSB   DESCRIPTION
+#define RADIOLIB_AX5043_ENCODING_DIFF                          0b00000010  //  7     0     <description>
+#define RADIOLIB_AX5043_ENCODING_INVERTED                      0b00000001  //  7     0     <description>
+#define RADIOLIB_AX5043_ENCODING_NRZ                           ( RADIOLIB_AX5043_ENCODING_DIFF | RADIOLIB_AX5043_ENCODING_INVERTED )
+
+// RADIOLIB_AX5043_REG_FIFOSTAT_CMD(AND9347-D.PDF Table 64)                    MSB   LSB   DESCRIPTION
+#define RADIOLIB_AX5043_FIFOSTAT_CMD_ASK_COHERENT              0b00000001  //  7     0     <description>
+#define RADIOLIB_AX5043_FIFOSTAT_CMD_CLEAR_ERROR               0b00000010  //  7     0     <description>
+#define RADIOLIB_AX5043_FIFOSTAT_CMD_CLEAR_FIFO                0b00000011  //  7     0     <description>
+#define RADIOLIB_AX5043_FIFOSTAT_CMD_COMMIT                    0b00000100  //  7     0     <description>
+#define RADIOLIB_AX5043_FIFOSTAT_CMD_ROLLBACK                  0b00000101  //  7     0     <description>
+
+// RADIOLIB_AX5043_REG_FIFODATA_HDR (AND9347-D.PDF Table 3)                    MSB   LSB   DESCRIPTION
+#define RADIOLIB_AX5043_REG_FIFODATA_HDR_SINGLE                0b00100000  //  7     0     <description>
+#define RADIOLIB_AX5043_REG_FIFODATA_HDR_DOUBLE                0b01000000  //  7     0     <description>
+#define RADIOLIB_AX5043_REG_FIFODATA_HDR_TRIPPLE               0b01100000  //  7     0     <description>
+#define RADIOLIB_AX5043_REG_FIFODATA_HDR_VARIABLE              0b11100000  //  7     0     <description>
+
+// RADIOLIB_AX5043_REG_FIFODATA_TYPE (AND9347-D.PDF Table 4)                   MSB   LSB   DESCRIPTION
+// Single byte header 
+#define RADIOLIB_AX5043_REG_FIFODATA_TYPE_RSSI                (0b00010001|RADIOLIB_AX5043_REG_FIFODATA_HDR_SINGLE)
+#define RADIOLIB_AX5043_REG_FIFODATA_TYPE_TXCTR               (0b00011100|RADIOLIB_AX5043_REG_FIFODATA_HDR_SINGLE)
+// Double byte header 
+#define RADIOLIB_AX5043_REG_FIFODATA_TYPE_FREQ_OFFSET         (0b00010010|RADIOLIB_AX5043_REG_FIFODATA_HDR_DOUBLE)
+#define RADIOLIB_AX5043_REG_FIFODATA_TYPE_ANTRSSI             (0b00010101|RADIOLIB_AX5043_REG_FIFODATA_HDR_DOUBLE)
+// Tripple byte header 
+#define RADIOLIB_AX5043_REG_FIFODATA_TYPE_REPEAT_DATA         (0b00000010|RADIOLIB_AX5043_REG_FIFODATA_HDR_TRIPPLE)
+#define RADIOLIB_AX5043_REG_FIFODATA_TYPE_TIMER               (0b00010000|RADIOLIB_AX5043_REG_FIFODATA_HDR_TRIPPLE)
+#define RADIOLIB_AX5043_REG_FIFODATA_TYPE_RF_FREQ_OFFSET      (0b00010011|RADIOLIB_AX5043_REG_FIFODATA_HDR_TRIPPLE)
+#define RADIOLIB_AX5043_REG_FIFODATA_TYPE_DATA_RATE           (0b00010100|RADIOLIB_AX5043_REG_FIFODATA_HDR_TRIPPLE)
+#define RADIOLIB_AX5043_REG_FIFODATA_TYPE_ANT_RSSI_SEL        (0b00010101|RADIOLIB_AX5043_REG_FIFODATA_HDR_TRIPPLE)
+// Variable byte header 
+#define RADIOLIB_AX5043_REG_FIFODATA_TYPE_DATA                (0b00000001|RADIOLIB_AX5043_REG_FIFODATA_HDR_VARIABLE)
+#define RADIOLIB_AX5043_REG_FIFODATA_TYPE_TXPWR               (0b00011101|RADIOLIB_AX5043_REG_FIFODATA_HDR_VARIABLE)
 
 // RADIOLIB_AX5043_REG_TXRATE                                                  MSB   LSB   DESCRIPTION
 // TXRATE = [ ( BITRATE / f_XTAL ) * 2^24 + 1/2 ]
@@ -87,10 +134,11 @@
 #define RADIOLIB_AX5043_FSKDEV_AFSK0                           0x8E      //  TYpical deviation of 3khz
 
 // RADIOLIB_AX5043_REG_MODULATION                                              MSB   LSB   DESCRIPTION
-#define RADIOLIB_AX5043_AFSKMARK0                              0x00  
-#define RADIOLIB_AX5043_AFSKMARK1                              0x14
-#define RADIOLIB_AX5043_AFSKSPACE0                             0x00  
-#define RADIOLIB_AX5043_AFSKSPACE1                             0x25  
+#define RADIOLIB_AX5043_AFSKMARK1                              0x00  
+#define RADIOLIB_AX5043_AFSKMARK0                              0x14
+
+#define RADIOLIB_AX5043_AFSKSPACE1                             0x00  
+#define RADIOLIB_AX5043_AFSKSPACE0                             0x24  
 
 // RADIOLIB_AX5043_REG_PLLRANGEA                                              MSB   LSB   DESCRIPTION
 #define RADIOLIB_AX5043_REG_PLLRANGEA_VCORANGE                 0b00001111  //  3     0    ? How much deviation after lock ?

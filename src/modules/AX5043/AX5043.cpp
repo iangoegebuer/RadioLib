@@ -97,7 +97,7 @@ int16_t AX5043::beginAFSK(float freq) {
   _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_PWRMODE, 0xE7);
   _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_PWRMODE, 0x67);
 
-  // Check if the chup exists
+  // Check if the chip exists
   if(!getChipRevision()) {
     RADIOLIB_DEBUG_PRINTLN(F("No AX5043 found!"));
     _mod->term();
@@ -109,7 +109,7 @@ int16_t AX5043::beginAFSK(float freq) {
   int16_t state = configModulation(RADIOLIB_AX5043_MODULATION_AFSK);
 
   // Set to 3kHz deviation
-  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FSKDEV, RADIOLIB_AX5043_FSKDEV_AFSK2);
+  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FSKDEV,   RADIOLIB_AX5043_FSKDEV_AFSK2);
   state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FSKDEV+1, RADIOLIB_AX5043_FSKDEV_AFSK1);
   state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FSKDEV+2, RADIOLIB_AX5043_FSKDEV_AFSK0);
   
@@ -151,60 +151,120 @@ int16_t AX5043::beginAFSK(float freq) {
 
 
 int16_t AX5043::transmit(uint8_t* data, size_t len, uint8_t addr) {
+  RADIOLIB_DEBUG_PRINTLN(F("transmit called"));
+  RADIOLIB_DEBUG_PRINTLN(len);
+  RADIOLIB_DEBUG_PRINTLN(addr, HEX);
+  
+  // Clear the FIFO and switch to TX mode
+  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FIFOSTAT, RADIOLIB_AX5043_FIFOSTAT_CMD_CLEAR_FIFO);
+  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_PWRMODE,  RADIOLIB_AX5043_PWRMODE_FULL_TX);
+
+  // Write data to FIFO
+  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FIFODATA, RADIOLIB_AX5043_REG_FIFODATA_TYPE_DATA);
+  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FIFODATA, len+1);  // Length + flag
+  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FIFODATA, 0x33);   // Raw+skip encoding | Packet start + packet end
+
+  // Write packet
+  for (int i = 0; i < len; i++) {
+    // Our data is pre-inverted 
+    _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FIFODATA, Module::flipBits(data[i]));
+  }
+
+  // Read Event reg to clear it
+  _mod->SPIgetRegValue(RADIOLIB_AX5043_REG_RADIOEVENTREQ0);
+
+  // Send the message!
+  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FIFOSTAT, RADIOLIB_AX5043_FIFOSTAT_CMD_COMMIT);
+
+  // Set event mask to transmit done
+  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_RADIOEVENTMASK0, 0x01);
+  // Set IRQ mask to PLLUNLOCK + Radio controller interrupt
+  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_IRQMASK0, 0x40);
+
+  // Wait until TX is finished
+  while(1)
+  {
+    // Transmit done?
+    if(_mod->SPIgetRegValue(RADIOLIB_AX5043_REG_RADIOEVENTREQ0) & 0x01)
+      break;
+  }
+
+  // Transmit is done power down
+  // TODO: Switch to RX?
+  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_PWRMODE, RADIOLIB_AX5043_PWRMODE_POWERDOWN);
+
   return 0;
 }
 
 
 int16_t AX5043::receive(uint8_t* data, size_t len) {
+  RADIOLIB_DEBUG_PRINTLN(F("receive called"));
   return 0;
 }
 
 
 int16_t AX5043::standby() {
+  RADIOLIB_DEBUG_PRINTLN(F("standby called"));
   return 0;
 }
 
 int16_t AX5043::transmitDirect(uint32_t frf = 0) {
+  RADIOLIB_DEBUG_PRINTLN(F("transmitDirect called"));
   return 0;
 }
 
 int16_t AX5043::receiveDirect() {
+  RADIOLIB_DEBUG_PRINTLN(F("receiveDirect called"));
   return 0;
 }
 
 int16_t AX5043::startTransmit(uint8_t* data, size_t len, uint8_t addr = 0) {
+  RADIOLIB_DEBUG_PRINTLN(F("startTransmit called"));
   return 0;
 }
 
 int16_t AX5043::readData(uint8_t* data, size_t len) {
+  RADIOLIB_DEBUG_PRINTLN(F("readData called"));
   return 0;
 }
 
 int16_t AX5043::setFrequencyDeviation(float freqDev) {
+  RADIOLIB_DEBUG_PRINTLN(F("setFrequencyDeviation called"));
   return 0;
 }
 
 size_t AX5043::getPacketLength(bool update = true) { 
+  RADIOLIB_DEBUG_PRINTLN(F("getPacketLength called"));
   return 0;
 }
 
 int16_t AX5043::setEncoding(uint8_t encoding) { 
+  RADIOLIB_DEBUG_PRINTLN(F("setEncoding called"));
+
+  if (encoding == RADIOLIB_ENCODING_NRZ) {
+    _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_ENCODING, RADIOLIB_AX5043_ENCODING_NRZ);
+  }
+
   return 0;
 }
 
 int16_t AX5043::setDataShaping(uint8_t sh) { 
+  RADIOLIB_DEBUG_PRINTLN(F("setDataShaping called"));
   return 0;
 }
 
 void AX5043::readBit(RADIOLIB_PIN_TYPE pin) { 
+  RADIOLIB_DEBUG_PRINTLN(F("readBit called"));
   return;
 }
 
 void AX5043::setDirectAction(void (*func)(void)) {
+  RADIOLIB_DEBUG_PRINTLN(F("setDirectAction called"));
   return;
 }
 
 uint8_t AX5043::randomByte() {
+  RADIOLIB_DEBUG_PRINTLN(F("randomByte called"));
   return 0xA7; // It's random I swear!
 }
 
