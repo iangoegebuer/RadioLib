@@ -31,8 +31,11 @@
   In this case, your class MUST implement all virtual methods of PhysicalLayer class.
 */
 //#include "../../protocols/PhysicalLayer/PhysicalLayer.h"
-
+#ifdef AX5043_XTAL_16368KHz
+#define RADIOLIB_AX5043_FREQUENCY_STEP_SIZE                    16777216.0/16.368e6
+#else
 #define RADIOLIB_AX5043_FREQUENCY_STEP_SIZE                    16777216.0/16e6
+#endif
 #define RADIOLIB_AX5043_MAX_PACKET_LENGTH                      255
 
 /*
@@ -49,15 +52,16 @@
 // AX5043 register map                             
 #define RADIOLIB_AX5043_REG_SILICON_REVISION                   0x000
 #define RADIOLIB_AX5043_REG_PWRMODE                            0x002
+#define RADIOLIB_AX5043_REG_PWRSTAT                            0x003
 #define RADIOLIB_AX5043_REG_IRQMASK0                           0x007
 #define RADIOLIB_AX5043_REG_RADIOEVENTMASK0                    0x009
 #define RADIOLIB_AX5043_REG_RADIOEVENTREQ0                     0x00F
 #define RADIOLIB_AX5043_REG_MODULATION                         0x010
 #define RADIOLIB_AX5043_REG_ENCODING                           0x011
 #define RADIOLIB_AX5043_REG_TXRATE                             0x167 // 0x167(LSB) - 0x165(MSB)
-#define RADIOLIB_AX5043_REG_FSKDEV                             0x161
-#define RADIOLIB_AX5043_REG_AFSKMARK                           0x112
-#define RADIOLIB_AX5043_REG_AFSKSPACE                          0x110
+#define RADIOLIB_AX5043_REG_FSKDEV                             0x163
+#define RADIOLIB_AX5043_REG_AFSKMARK                           0x113
+#define RADIOLIB_AX5043_REG_AFSKSPACE                          0x111
 #define RADIOLIB_AX5043_REG_FREQA                              0x037 // 0x037(LSB) - 0x034(MSB)
 #define RADIOLIB_AX5043_REG_TXPWRCOEFFB                        0x16B
 
@@ -122,6 +126,7 @@
 // RADIOLIB_AX5043_REG_TXRATE                                                  MSB   LSB   DESCRIPTION
 // TXRATE = [ ( BITRATE / f_XTAL ) * 2^24 + 1/2 ]
 // TXRATE is split into 3 registers starting at 0x167(LSB) and ending at 0x165(MSB)
+#define RADIOLIB_AX5043_TXRATE_AFSK                            0x4EB  
 
 // RADIOLIB_AX5043_REG_FSKDEV                                                  MSB   LSB   DESCRIPTION
 // f_DEVIATION = Space/Mark deviation from center
@@ -129,16 +134,11 @@
 // FSKDEV = [ ( f_DEVIATION / f_XTAL ) * 2^24 + 1/2 ]
 // For AFSK
 // FSKDEV = [ ( 0.858785 * f_DEVIATION / f_XTAL ) * 2^24 + 1/2 ]
-#define RADIOLIB_AX5043_FSKDEV_AFSK2                           0x00      //  TYpical deviation of 3khz
-#define RADIOLIB_AX5043_FSKDEV_AFSK1                           0x0A      //  TYpical deviation of 3khz
-#define RADIOLIB_AX5043_FSKDEV_AFSK0                           0x8E      //  TYpical deviation of 3khz
+#define RADIOLIB_AX5043_FSKDEV_AFSK                            0x000A8E      //  TYpical deviation of 3khz
 
 // RADIOLIB_AX5043_REG_MODULATION                                              MSB   LSB   DESCRIPTION
-#define RADIOLIB_AX5043_AFSKMARK1                              0x00  
-#define RADIOLIB_AX5043_AFSKMARK0                              0x14
-
-#define RADIOLIB_AX5043_AFSKSPACE1                             0x00  
-#define RADIOLIB_AX5043_AFSKSPACE0                             0x24  
+#define RADIOLIB_AX5043_AFSKMARK                               0x14
+#define RADIOLIB_AX5043_AFSKSPACE                              0x24  
 
 // RADIOLIB_AX5043_REG_PLLRANGEA                                              MSB   LSB   DESCRIPTION
 #define RADIOLIB_AX5043_REG_PLLRANGEA_VCORANGE                 0b00001111  //  3     0    ? How much deviation after lock ?
@@ -203,7 +203,7 @@ class AX5043 : public PhysicalLayer {
     */
     // basic methods
     int16_t begin();
-    int16_t beginAFSK(float freq = 144.390e6);
+    int16_t beginAFSK(uint32_t freq, uint32_t txRate = RADIOLIB_AX5043_TXRATE_AFSK, uint32_t fskDev = RADIOLIB_AX5043_FSKDEV_AFSK, uint16_t afskMark = RADIOLIB_AX5043_AFSKMARK, uint16_t afskSpace = RADIOLIB_AX5043_AFSKSPACE);
     int16_t getChipRevision();
     
 /*!
@@ -328,6 +328,7 @@ class AX5043 : public PhysicalLayer {
     */
     int16_t configModulation(uint8_t modulation);
     int16_t pllRanging();
+    uint16_t waitForXtal();
 };
 
 #endif

@@ -34,6 +34,17 @@ int16_t AX5043::getChipRevision() {
   return(_mod->SPIgetRegValue(RADIOLIB_AX5043_REG_SILICON_REVISION));
 }
 
+uint16_t AX5043::waitForXtal() {
+  uint8_t pll_range = 0;
+
+  // Wait for xtal to be running
+  while(!pll_range) {
+    pll_range = _mod->SPIgetRegValue(0x01D);
+    RADIOLIB_DEBUG_PRINTLN(pll_range, HEX);
+    delay(1);
+  }
+}
+
 int16_t AX5043::pllRanging() {
   uint8_t pll_loop_bak;
   uint8_t pll_cpi_bak;
@@ -62,16 +73,13 @@ int16_t AX5043::pllRanging() {
 
   _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_PWRMODE,   0x67 | 0x05);  // AX5043_PWRSTATE_XTAL_ON
 
-  // Wait for xtal to be running
-  while(!pll_range) {
-    pll_range = _mod->SPIgetRegValue(0x01D);
-    RADIOLIB_DEBUG_PRINTLN(pll_range, HEX);
-    delay(100);
-  }
+  waitForXtal();
 
   pll_range = 0x18;
   
-  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_PLLRANGEA, RADIOLIB_AX5043_REG_PLLRANGEA_VCORANGE_RST | RADIOLIB_AX5043_REG_PLLRANGEA_RNG_START);
+  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_PLLRANGEA, RADIOLIB_AX5043_REG_PLLRANGEA_VCORANGE_RST | 
+                                                      RADIOLIB_AX5043_REG_PLLRANGEA_RNG_START);
+
   while(pll_range & RADIOLIB_AX5043_REG_PLLRANGEA_RNG_START) {
     pll_range = _mod->SPIgetRegValue(RADIOLIB_AX5043_REG_PLLRANGEA);
     RADIOLIB_DEBUG_PRINTLN(pll_range, HEX);
@@ -85,7 +93,7 @@ int16_t AX5043::pllRanging() {
   return RADIOLIB_ERR_NONE;
 }
 
-int16_t AX5043::beginAFSK(float freq) {
+int16_t AX5043::beginAFSK(uint32_t freq, uint32_t txRate, uint32_t fskDev, uint16_t afskMark, uint16_t afskSpace) {
   /*
     "begin" method implementation MUST call the "init" method with appropriate settings.
   */
@@ -109,39 +117,37 @@ int16_t AX5043::beginAFSK(float freq) {
   int16_t state = configModulation(RADIOLIB_AX5043_MODULATION_AFSK);
 
   // Set to 3kHz deviation
-  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FSKDEV,   RADIOLIB_AX5043_FSKDEV_AFSK2);
-  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FSKDEV+1, RADIOLIB_AX5043_FSKDEV_AFSK1);
-  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FSKDEV+2, RADIOLIB_AX5043_FSKDEV_AFSK0);
+  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FSKDEV,    fskDev&0xff);
+  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FSKDEV-1, (fskDev>>8)&0xff);
+  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FSKDEV-2, (fskDev>>16)&0xff);
   
   // TX Rate
-  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_TXRATE,   0xEB);
-  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_TXRATE-1, 0x4);
-  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_TXRATE-2, 0x0);
-  
+  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_TXRATE,    txRate&0xff);
+  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_TXRATE-1, (txRate>>8)&0xff);
+  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_TXRATE-2, (txRate>>16)&0xff);
+
   // Mark and space at 2200Hz and 1200Hz
-  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_AFSKMARK,   RADIOLIB_AX5043_AFSKMARK1);
-  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_AFSKMARK+1, RADIOLIB_AX5043_AFSKMARK0);
-  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_AFSKSPACE,   RADIOLIB_AX5043_AFSKSPACE1);
-  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_AFSKSPACE+1, RADIOLIB_AX5043_AFSKSPACE0);
+  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_AFSKMARK,     afskMark&0xFF);
+  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_AFSKMARK-1,  (afskSpace>>8)&0xFF);
+  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_AFSKSPACE,    afskSpace);
+  state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_AFSKSPACE-1, (afskSpace>>8)&0xFF);
 
   // Set power to 15dB
   state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_TXPWRCOEFFB,   0xFF);
   state =  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_TXPWRCOEFFB-1, 0x0F);
 
   // frequncy * 2^24 / 16MHz(xtal)
-  freq = freq * 1.048576;
-  // Round to nearest bit
-  freq = freq + 0.5;
-  // Convert to binary data
-  uint32_t fr = (uint32_t)freq;
+  // freq = freq * 1.048576;
+  // // Round to nearest bit
+  // freq = freq + 0.5;
 
   // From AND9347-D.PDF, It is strongly recommended to always set bit 0 to avoid spectral tones.
-  fr |= 1;
+  freq |= 1;
 
-  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FREQA,   fr);
-  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FREQA-1, fr >> 8);
-  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FREQA-2, fr >> 16);
-  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FREQA-3, fr >> 24);
+  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FREQA,    freq&0xFF);
+  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FREQA-1, (freq >> 8)&0xFF);
+  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FREQA-2, (freq >> 16)&0xFF);
+  _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FREQA-3, (freq >> 24)&0xFF);
 
   RADIOLIB_DEBUG_PRINTLN(fr, HEX);
 
@@ -158,6 +164,9 @@ int16_t AX5043::transmit(uint8_t* data, size_t len, uint8_t addr) {
   // Clear the FIFO and switch to TX mode
   _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FIFOSTAT, RADIOLIB_AX5043_FIFOSTAT_CMD_CLEAR_FIFO);
   _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_PWRMODE,  RADIOLIB_AX5043_PWRMODE_FULL_TX);
+
+
+  while (!(_mod->SPIgetRegValue(RADIOLIB_AX5043_REG_PWRSTAT) & 0x08));
 
   // Write data to FIFO
   _mod->SPIsetRegValue(RADIOLIB_AX5043_REG_FIFODATA, RADIOLIB_AX5043_REG_FIFODATA_TYPE_DATA);

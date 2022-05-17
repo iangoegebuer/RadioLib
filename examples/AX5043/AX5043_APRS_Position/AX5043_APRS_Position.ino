@@ -25,6 +25,8 @@
 */
 
 // include the library
+// Uncomment below to use 16.368MHz XTAL
+//#define AX5043_XTAL_16368KHz 1
 #include <RadioLib.h>
 
 // AX5043 has the following connections:
@@ -55,7 +57,12 @@ void setup() {
   // NOTE: moved to ISM band on purpose
   //       DO NOT transmit in APRS bands without ham radio license!
   Serial.print(F("[AX5043] Initializing ... "));
-  int state = radio.beginAFSK(144.39e6);
+  #ifdef AX5043_XTAL_16368KHz
+  int state = radio.beginAFSK(0x8D24C93, 0x4CE, 0xA51, 0x13, 0x23);
+  #else
+  int state = radio.beginAFSK(0x9063D71);
+  #endif
+  // int state = radio.beginAFSK(142.39e6);
 
   // when using one of the non-LoRa modules for AX.25
   // (RF69, CC1101, Si4432 etc.), use the basic begin() method
@@ -73,8 +80,8 @@ void setup() {
   Serial.print(F("[AX.25] Initializing ... "));
   // source station callsign:     "N7LEM"
   // source station SSID:         0
-  // preamble length:             8 bytes
-  state = ax25.begin("N7LEM");
+  // preamble length:             5 bytes
+  state = ax25.begin("N7LEM", 0, 50);
   if(state == RADIOLIB_ERR_NONE) {
     Serial.println(F("success!"));
   } else {
@@ -99,10 +106,7 @@ void setup() {
 void loop() {
   Serial.print(F("[APRS] Sending position ... "));
 
-  int state = aprs.sendPosition("N0CALL", 0, "4911.67N", "01635.96E");
-  delay(500);
-  state |=    aprs.sendPosition("N0CALL", 0, "4911.67N", "01635.96E", "I'm here!");
-  delay(500);
+  int state = aprs.sendPosition("APRS", 0, "3713.31N", "12159.03W");
 
   if(state == RADIOLIB_ERR_NONE) {
     Serial.println(F("success!"));
