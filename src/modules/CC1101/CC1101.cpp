@@ -81,15 +81,16 @@ int16_t CC1101::begin(float freq, float br, float freqDev, float rxBw, int8_t po
   RADIOLIB_ASSERT(state);
 
   // set default data shaping
-  state = setDataShaping(RADIOLIB_ENCODING_NRZ);
+  state = setDataShaping(RADIOLIB_SHAPING_NONE);
   RADIOLIB_ASSERT(state);
 
   // set default encoding
-  state = setEncoding(RADIOLIB_SHAPING_NONE);
+  state = setEncoding(RADIOLIB_ENCODING_NRZ);
   RADIOLIB_ASSERT(state);
 
   // set default sync word
-  state = setSyncWord(0x12, 0xAD, 0, false);
+  uint8_t sw[RADIOLIB_CC1101_DEFAULT_SW_LEN] = RADIOLIB_CC1101_DEFAULT_SW;
+  state = setSyncWord(sw[0], sw[1], 0, false);
   RADIOLIB_ASSERT(state);
 
   // flush FIFOs
@@ -109,35 +110,27 @@ int16_t CC1101::transmit(uint8_t* data, size_t len, uint8_t addr) {
 
   // wait for transmission start or timeout
   uint32_t start = _mod->micros();
-  while(!_mod->digitalRead(_mod->getIrq())) {
+  while(!_mod->digitalRead(_mod->getGpio())) {
     _mod->yield();
 
     if(_mod->micros() - start > timeout) {
-      standby();
-      SPIsendCommand(RADIOLIB_CC1101_CMD_FLUSH_TX);
+      finishTransmit();
       return(RADIOLIB_ERR_TX_TIMEOUT);
     }
   }
 
   // wait for transmission end or timeout
   start = _mod->micros();
-  while(_mod->digitalRead(_mod->getIrq())) {
+  while(_mod->digitalRead(_mod->getGpio())) {
     _mod->yield();
 
     if(_mod->micros() - start > timeout) {
-      standby();
-      SPIsendCommand(RADIOLIB_CC1101_CMD_FLUSH_TX);
+      finishTransmit();
       return(RADIOLIB_ERR_TX_TIMEOUT);
     }
   }
 
-  // set mode to standby
-  standby();
-
-  // flush Tx FIFO
-  SPIsendCommand(RADIOLIB_CC1101_CMD_FLUSH_TX);
-
-  return(state);
+  return(finishTransmit());
 }
 
 int16_t CC1101::receive(uint8_t* data, size_t len) {
@@ -155,7 +148,7 @@ int16_t CC1101::receive(uint8_t* data, size_t len) {
 
     if(_mod->micros() - start > timeout) {
       standby();
-      SPIsendCommand(RADIOLIB_CC1101_CMD_FLUSH_TX);
+      SPIsendCommand(RADIOLIB_CC1101_CMD_FLUSH_RX);
       return(RADIOLIB_ERR_RX_TIMEOUT);
     }
   }
@@ -240,7 +233,7 @@ void CC1101::clearGdo0Action() {
 }
 
 void CC1101::setGdo2Action(void (*func)(void), RADIOLIB_INTERRUPT_STATUS dir) {
-  if(_mod->getGpio() != RADIOLIB_NC) {
+  if(_mod->getGpio() == RADIOLIB_NC) {
     return;
   }
   _mod->pinMode(_mod->getGpio(), INPUT);
@@ -248,7 +241,7 @@ void CC1101::setGdo2Action(void (*func)(void), RADIOLIB_INTERRUPT_STATUS dir) {
 }
 
 void CC1101::clearGdo2Action() {
-  if(_mod->getGpio() != RADIOLIB_NC) {
+  if(_mod->getGpio() == RADIOLIB_NC) {
     return;
   }
   _mod->detachInterrupt(RADIOLIB_DIGITAL_PIN_TO_INTERRUPT(_mod->getGpio()));
@@ -267,7 +260,7 @@ int16_t CC1101::startTransmit(uint8_t* data, size_t len, uint8_t addr) {
   SPIsendCommand(RADIOLIB_CC1101_CMD_FLUSH_TX);
 
   // set GDO0 mapping
-  int16_t state = SPIsetRegValue(RADIOLIB_CC1101_REG_IOCFG0, RADIOLIB_CC1101_GDOX_SYNC_WORD_SENT_OR_RECEIVED);
+  int16_t state = SPIsetRegValue(RADIOLIB_CC1101_REG_IOCFG2, RADIOLIB_CC1101_GDOX_SYNC_WORD_SENT_OR_RECEIVED, 5, 0);
   RADIOLIB_ASSERT(state);
 
   // data put on FIFO.
@@ -328,6 +321,16 @@ int16_t CC1101::startTransmit(uint8_t* data, size_t len, uint8_t addr) {
   return (state);
 }
 
+int16_t CC1101::finishTransmit() {
+  // set mode to standby to disable transmitter/RF switch
+  int16_t state = standby();
+
+  // flush Tx FIFO
+  SPIsendCommand(RADIOLIB_CC1101_CMD_FLUSH_TX);
+
+  return(state);
+}
+
 int16_t CC1101::startReceive() {
   // set mode to standby
   standby();
@@ -375,12 +378,6 @@ int16_t CC1101::readData(uint8_t* data, size_t len) {
         RADIOLIB_DEBUG_PRINTLN(F("No data for more than 5mS. Stop here."));
         break;
       } else {
-        /*
-         * Does this work for all rates? If 1 ms is longer than the 1ms delay
-         * then the entire FIFO will be transmitted during that delay.
-         *
-         * TODO: drop this delay(1) or come up with a better solution:
-        */
         delay(1);
         bytesInFIFO = SPIgetRegValue(RADIOLIB_CC1101_REG_RXBYTES, 6, 0);
         continue;
@@ -400,17 +397,21 @@ int16_t CC1101::readData(uint8_t* data, size_t len) {
   // check if status bytes are enabled (default: RADIOLIB_CC1101_APPEND_STATUS_ON)
   bool isAppendStatus = SPIgetRegValue(RADIOLIB_CC1101_REG_PKTCTRL1, 2, 2) == RADIOLIB_CC1101_APPEND_STATUS_ON;
 
+  // for some reason, we need this delay here to get the correct status bytes
+  delay(3);
+
   // If status byte is enabled at least 2 bytes (2 status bytes + any following packet) will remain in FIFO.
-  if (bytesInFIFO >= 2 && isAppendStatus) {
+  if (isAppendStatus) {
     // read RSSI byte
     _rawRSSI = SPIgetRegValue(RADIOLIB_CC1101_REG_FIFO);
 
-  // read LQI and CRC byte
-  uint8_t val = SPIgetRegValue(RADIOLIB_CC1101_REG_FIFO);
-  _rawLQI = val & 0x7F;
+    // read LQI and CRC byte
+    uint8_t val = SPIgetRegValue(RADIOLIB_CC1101_REG_FIFO);
+    _rawLQI = val & 0x7F;
 
     // check CRC
     if (_crcOn && (val & RADIOLIB_CC1101_CRC_OK) == RADIOLIB_CC1101_CRC_ERROR) {
+      _packetLengthQueried = false;
       return (RADIOLIB_ERR_CRC_MISMATCH);
     }
   }
@@ -472,7 +473,7 @@ int16_t CC1101::setBitRate(float br) {
   int16_t state = SPIsetRegValue(RADIOLIB_CC1101_REG_MDMCFG4, e, 3, 0);
   state |= SPIsetRegValue(RADIOLIB_CC1101_REG_MDMCFG3, m);
   if(state == RADIOLIB_ERR_NONE) {
-    CC1101::_br = br;
+    _br = br;
   }
   return(state);
 }
@@ -491,6 +492,7 @@ int16_t CC1101::setRxBandwidth(float rxBw) {
         // set Rx channel filter bandwidth
         return(SPIsetRegValue(RADIOLIB_CC1101_REG_MDMCFG4, (e << 6) | (m << 4), 7, 4));
       }
+
     }
   }
 
@@ -504,7 +506,10 @@ int16_t CC1101::setFrequencyDeviation(float freqDev) {
     newFreqDev = 1.587;
   }
 
-  RADIOLIB_CHECK_RANGE(newFreqDev, 1.587, 380.8, RADIOLIB_ERR_INVALID_FREQUENCY_DEVIATION);
+  // check range unless 0 (special value)
+  if (freqDev != 0) {
+    RADIOLIB_CHECK_RANGE(newFreqDev, 1.587, 380.8, RADIOLIB_ERR_INVALID_FREQUENCY_DEVIATION);
+  }
 
   // set mode to standby
   SPIsendCommand(RADIOLIB_CC1101_CMD_IDLE);
@@ -517,7 +522,33 @@ int16_t CC1101::setFrequencyDeviation(float freqDev) {
   // set frequency deviation value
   int16_t state = SPIsetRegValue(RADIOLIB_CC1101_REG_DEVIATN, (e << 4), 6, 4);
   state |= SPIsetRegValue(RADIOLIB_CC1101_REG_DEVIATN, m, 2, 0);
+  
   return(state);
+}
+
+int16_t CC1101::getFrequencyDeviation(float *freqDev) {
+  if (freqDev == NULL) {
+    return(RADIOLIB_ERR_NULL_POINTER);
+  }
+
+  // if ASK/OOK, deviation makes no sense
+  if (_modulation == RADIOLIB_CC1101_MOD_FORMAT_ASK_OOK) {
+    *freqDev = 0.0;
+
+    return(RADIOLIB_ERR_NONE);
+  }
+
+  // get exponent and mantissa values from registers
+  uint8_t e = (uint8_t)(SPIgetRegValue(RADIOLIB_CC1101_REG_DEVIATN, 6, 4) >> 4);
+  uint8_t m = (uint8_t)SPIgetRegValue(RADIOLIB_CC1101_REG_DEVIATN, 2, 0);
+
+  // calculate frequency deviation (pag. 79 of the CC1101 datasheet):
+  //
+  //   freqDev = (fXosc / 2^17) * (8 + m) * 2^e
+  //
+  *freqDev = (1000.0 / (uint32_t(1) << 17)) - (8 + m) * (uint32_t(1) << e);
+
+  return(RADIOLIB_ERR_NONE);
 }
 
 int16_t CC1101::setOutputPower(int8_t power) {
@@ -608,8 +639,6 @@ int16_t CC1101::setSyncWord(uint8_t* syncWord, uint8_t len, uint8_t maxErrBits, 
     }
   }
 
-  _syncWordLength = len;
-
   // enable sync word filtering
   int16_t state = enableSyncWordFiltering(maxErrBits, requireCarrierSense);
   RADIOLIB_ASSERT(state);
@@ -658,10 +687,8 @@ int16_t CC1101::setPreambleLength(uint8_t preambleLength) {
       return(RADIOLIB_ERR_INVALID_PREAMBLE_LENGTH);
   }
 
-
-  return SPIsetRegValue(RADIOLIB_CC1101_REG_MDMCFG1, value, 6, 4);
+  return(SPIsetRegValue(RADIOLIB_CC1101_REG_MDMCFG1, value, 6, 4));
 }
-
 
 int16_t CC1101::setNodeAddress(uint8_t nodeAddr, uint8_t numBroadcastAddrs) {
   RADIOLIB_CHECK_RANGE(numBroadcastAddrs, 1, 2, RADIOLIB_ERR_INVALID_NUM_BROAD_ADDRS);
@@ -713,12 +740,25 @@ int16_t CC1101::setOOK(bool enableOOK) {
   return(setOutputPower(_power));
 }
 
-float CC1101::getRSSI() const {
+float CC1101::getRSSI() {
   float rssi;
-  if(_rawRSSI >= 128) {
-    rssi = (((float)_rawRSSI - 256.0)/2.0) - 74.0;
+
+  if (_directMode) {
+    if(_rawRSSI >= 128) {
+      rssi = (((float)_rawRSSI - 256.0)/2.0) - 74.0;
+    } else {
+      rssi = (((float)_rawRSSI)/2.0) - 74.0;
+    }
   } else {
-    rssi = (((float)_rawRSSI)/2.0) - 74.0;
+    uint8_t rawRssi = SPIreadRegister(RADIOLIB_CC1101_REG_RSSI);
+    if (rawRssi >= 128)
+    {
+      rssi = ((rawRssi - 256) / 2) - 74;
+    }
+    else
+    {
+      rssi = (rawRssi / 2) - 74;
+    }
   }
   return(rssi);
 }
@@ -784,14 +824,21 @@ int16_t CC1101::setPromiscuousMode(bool promiscuous) {
   }
 
   if (promiscuous == true) {
-    // disable preamble and sync word filtering and insertion
+    // disable preamble detection and generation
+    state = setPreambleLength(0);
+    RADIOLIB_ASSERT(state);
+
+    // disable sync word filtering and insertion
     state = disableSyncWordFiltering();
     RADIOLIB_ASSERT(state);
 
     // disable CRC filtering
     state = setCrcFiltering(false);
   } else {
-    // enable preamble and sync word filtering and insertion
+    state = setPreambleLength(RADIOLIB_CC1101_DEFAULT_PREAMBLELEN);
+    RADIOLIB_ASSERT(state);
+
+    // enable sync word filtering and insertion
     state = enableSyncWordFiltering();
     RADIOLIB_ASSERT(state);
 
@@ -879,12 +926,21 @@ int16_t CC1101::getChipVersion() {
   return(SPIgetRegValue(RADIOLIB_CC1101_REG_VERSION));
 }
 
+#if !defined(RADIOLIB_EXCLUDE_DIRECT_RECEIVE)
 void CC1101::setDirectAction(void (*func)(void)) {
   setGdo0Action(func);
 }
 
 void CC1101::readBit(RADIOLIB_PIN_TYPE pin) {
   updateDirectBuffer((uint8_t)digitalRead(pin));
+}
+#endif
+
+int16_t CC1101::setDIOMapping(RADIOLIB_PIN_TYPE pin, uint8_t value) {
+  if (pin > 2)
+    return RADIOLIB_ERR_INVALID_DIO_PIN;
+
+  return(SPIsetRegValue(RADIOLIB_CC1101_REG_IOCFG0 - pin, value));
 }
 
 int16_t CC1101::config() {
@@ -909,6 +965,7 @@ int16_t CC1101::directMode(bool sync) {
   SPIsendCommand(RADIOLIB_CC1101_CMD_IDLE);
 
   int16_t state = 0;
+  _directMode = sync;
   if (sync) {
     // set GDO0 and GDO2 mapping
   	state |= SPIsetRegValue(RADIOLIB_CC1101_REG_IOCFG0, RADIOLIB_CC1101_GDOX_SERIAL_CLOCK , 5, 0);

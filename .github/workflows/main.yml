@@ -27,11 +27,14 @@ jobs:
           - esp8266:esp8266:generic
           - Intel:arc32:arduino_101
           - SparkFun:apollo3:sfe_artemis
-          - STM32:stm32:GenF3
+          - STMicroelectronics:stm32:GenF3
           - stm32duino:STM32F1:mapleMini
           - MegaCoreX:megaavr:4809
           - arduino:mbed_rp2040:pico
+          - rp2040:rp2040:rpipico
           - CubeCell:CubeCell:CubeCell-Board
+          - MegaCore:avr:1281
+          - teensy:avr:teensy41
 
     runs-on: ubuntu-latest
     name: ${{ matrix.board }}
@@ -70,14 +73,6 @@ jobs:
             # Arduino Mega
             echo "::set-output name=options:::cpu=atmega2560"
 
-          elif [[ "${{ contains(matrix.board, 'arduino:mbed') }}" == "true" ]]; then
-            # Arduino Nano 33 BLE
-            echo "::set-output name=skip-pattern::(HTTP|MQTT).*ino"
-
-          elif [[ "${{ contains(matrix.board, 'arduino-beta:mbed') }}" == "true" ]]; then
-            # Arduino Portenta H7
-            echo "::set-output name=skip-pattern::(HTTP|MQTT).*ino"
-
           elif [[ "${{ contains(matrix.board, 'arduino:megaavr:uno2018') }}" == "true" ]]; then
             # Arduino Uno WiFi
             echo "::set-output name=options:::mode=on"
@@ -106,18 +101,16 @@ jobs:
             # ESP8266
             echo "::set-output name=options:::xtal=80,ResetMethod=ck,CrystalFreq=26,FlashFreq=40,FlashMode=qio,eesz=512K"
             echo "::set-output name=index-url::--additional-urls http://arduino.esp8266.com/stable/package_esp8266com_index.json"
-            echo "::set-output name=skip-pattern::(HTTP|MQTT).*ino"
 
           elif [[ "${{ contains(matrix.board, 'SparkFun:apollo3') }}" == "true" ]]; then
             # SparkFun Apollo
             echo "::set-output name=index-url::--additional-urls https://raw.githubusercontent.com/sparkfun/Arduino_Apollo3/master/package_sparkfun_apollo3_index.json"
             echo "::set-output name=warnings::'none'"
-            echo "::set-output name=skip-pattern::(HTTP|MQTT).*ino"
 
-          elif [[ "${{ contains(matrix.board, 'STM32:stm32') }}" == "true" ]]; then
+          elif [[ "${{ contains(matrix.board, 'STMicroelectronics:stm32') }}" == "true" ]]; then
             # STM32 (official core)
             echo "::set-output name=options:::pnum=BLACKPILL_F303CC"
-            echo "::set-output name=index-url::--additional-urls https://github.com/stm32duino/BoardManagerFiles/raw/master/STM32/package_stm_index.json"
+            echo "::set-output name=index-url::--additional-urls https://raw.githubusercontent.com/stm32duino/BoardManagerFiles/main/package_stmicroelectronics_index.json"
 
           elif [[ "${{ contains(matrix.board, 'stm32duino:STM32F1') }}" == "true" ]]; then
             # STM32 (unofficial core)
@@ -129,8 +122,20 @@ jobs:
             echo "::set-output name=index-url::--additional-urls https://mcudude.github.io/MegaCoreX/package_MCUdude_MegaCoreX_index.json"
 
           elif [[ "${{ contains(matrix.board, 'CubeCell:CubeCell') }}" == "true" ]]; then
-            # MegaCoreX
+            # CubeCell
             echo "::set-output name=index-url::--additional-urls https://resource.heltec.cn/download/package_CubeCell_index.json"
+
+          elif [[ "${{ contains(matrix.board, 'rp2040:rp2040') }}" == "true" ]]; then
+            # CubeCell
+            echo "::set-output name=index-url::--additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json"
+
+          elif [[ "${{ contains(matrix.board, 'MegaCore:avr') }}" == "true" ]]; then
+            # MegaCore
+            echo "::set-output name=index-url::--additional-urls https://mcudude.github.io/MegaCore/package_MCUdude_MegaCore_index.json"
+
+          elif [[ "${{ contains(matrix.board, 'teensy:avr') }}" == "true" ]]; then
+            # Teensy
+            echo "::set-output name=index-url::--additional-urls https://www.pjrc.com/teensy/td_156/package_teensy_index.json"
 
           fi
 

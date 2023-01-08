@@ -1,12 +1,12 @@
 /*
-   RadioLib Morse Transmit AFSK Example
+   RadioLib Morse Transmit AM Example
 
    This example sends Morse code message using
-   SX1278's FSK modem. The data is modulated
-   as AFSK.
+   SX1278's FSK modem. The signal is modulated
+   as OOK, and may be demodulated in AM mode.
 
    Other modules that can be used for Morse Code
-   with AFSK modulation:
+   with AM modulation:
     - SX127x/RFM9x
     - RF69
     - SX1231
@@ -62,9 +62,20 @@ void setup() {
 
   // initialize Morse client
   Serial.print(F("[Morse] Initializing ... "));
-  // AFSK tone frequency:         400 MHz
+  // tone frequency:              400 Hz
   // speed:                       20 words per minute
   state = morse.begin(400);
+  if(state == RADIOLIB_ERR_NONE) {
+    Serial.println(F("success!"));
+  } else {
+    Serial.print(F("failed, code "));
+    Serial.println(state);
+    while(true);
+  }
+
+  // after that, set mode to OOK to emulate AM modulation
+  Serial.print(F("[SX1278] Switching to OOK ... "));
+  state = radio.setOOK(true);
   if(state == RADIOLIB_ERR_NONE) {
     Serial.println(F("success!"));
   } else {

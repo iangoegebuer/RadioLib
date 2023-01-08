@@ -1,8 +1,9 @@
 /*
-   RadioLib Morse Transmit Example
+   RadioLib Morse Transmit SSB Example
 
    This example sends Morse code message using
-   SX1278's FSK modem.
+   SX1278's FSK modem. The signal is an unmodulated
+   carrier wave, and may be demodulated in SSB mode.
 
    Other modules that can be used for Morse Code:
     - SX127x/RFM9x
@@ -59,7 +60,7 @@ void setup() {
 
   // initialize Morse client
   Serial.print(F("[Morse] Initializing ... "));
-  // base frequency:              434.0 MHz
+  // carrier wave frequency:      434.0 MHz
   // speed:                       20 words per minute
   state = morse.begin(434.0);
   if(state == RADIOLIB_ERR_NONE) {

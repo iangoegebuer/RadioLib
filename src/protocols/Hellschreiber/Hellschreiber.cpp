@@ -39,7 +39,7 @@ size_t HellClient::printGlyph(uint8_t* buff) {
         } else {
           standby();
         }
-        while(mod->micros() - start < _pixelDuration);
+        mod->waitForMicroseconds(start, _pixelDuration);
     }
   }
 
@@ -47,6 +47,10 @@ size_t HellClient::printGlyph(uint8_t* buff) {
   standby();
 
   return(1);
+}
+
+void HellClient::setInversion(bool invert) {
+  _inv = invert;
 }
 
 size_t HellClient::write(const char* str) {
@@ -295,7 +299,7 @@ int16_t HellClient::transmitDirect(uint32_t freq, uint32_t freqHz) {
 int16_t HellClient::standby() {
   #if !defined(RADIOLIB_EXCLUDE_AFSK)
   if(_audio != nullptr) {
-    return(_audio->noTone());
+    return(_audio->noTone(_inv));
   }
   #endif
   return(_phy->standby());

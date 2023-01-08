@@ -91,6 +91,25 @@ class Module {
     */
     uint8_t SPIwriteCommand = 0b10000000;
 
+    #if defined(RADIOLIB_INTERRUPT_TIMING)
+
+    /*!
+      \brief Timer interrupt setup callback typedef.
+    */
+    typedef void (*TimerSetupCb_t)(uint32_t len);
+
+    /*!
+      \brief Callback to timer interrupt setup function when running in interrupt timing control mode.
+    */
+    TimerSetupCb_t TimerSetupCb = nullptr;
+
+    /*!
+      \brief Timer flag variable to be controlled by a platform-dependent interrupt.
+    */
+    volatile bool TimerFlag = false;
+
+    #endif
+
     // basic methods
 
     /*!
@@ -241,6 +260,16 @@ class Module {
     */
     void setRfSwitchState(RADIOLIB_PIN_STATUS rxPinState, RADIOLIB_PIN_STATUS txPinState);
 
+    /*!
+      \brief Wait for time to elapse, either using the microsecond timer, or the TimerFlag.
+      Note that in interrupt timing mode, it is up to the user to set up the timing interrupt!
+
+      \param start Waiting start timestamp, in microseconds.
+
+      \param len Waiting duration, in microseconds;
+    */
+    void waitForMicroseconds(uint32_t start, uint32_t len);
+
     // Arduino core overrides
 
     /*!
@@ -334,6 +363,11 @@ class Module {
     uint32_t micros();
 
     /*!
+      \brief Arduino core pulseIn override.
+    */
+    uint32_t pulseIn(RADIOLIB_PIN_TYPE pin, RADIOLIB_PIN_STATUS state, uint32_t timeout);
+
+    /*!
       \brief Arduino core SPI begin override.
     */
     void begin();
@@ -361,11 +395,11 @@ class Module {
     // helper functions to set up SPI overrides on Arduino
     #if defined(RADIOLIB_BUILD_ARDUINO)
     void SPIbegin();
-    void SPIbeginTransaction();
-    uint8_t SPItransfer(uint8_t b);
-    void SPIendTransaction();
     void SPIend();
     #endif
+    virtual void SPIbeginTransaction();
+    virtual uint8_t SPItransfer(uint8_t b);
+    virtual void SPIendTransaction();
 
     /*!
       \brief Function to reflect bits within a byte.
@@ -377,33 +411,23 @@ class Module {
     */
     static uint16_t flipBits16(uint16_t i);
 
-    // hardware abstraction layer callbacks
-    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_PIN_MODE);
-    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_DIGITAL_WRITE);
-    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_DIGITAL_READ);
-    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_TONE);
-    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_NO_TONE);
-    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_ATTACH_INTERRUPT);
-    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_DETACH_INTERRUPT);
-    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_YIELD);
-    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_DELAY);
-    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_DELAY_MICROSECONDS);
-    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_MILLIS);
-    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_MICROS);
+    /*!
+      \brief Function to dump data as hex into the debug port.
 
-    #if defined(RADIOLIB_BUILD_ARDUINO)
-    RADIOLIB_GENERATE_CALLBACK_SPI(RADIOLIB_CB_ARGS_SPI_BEGIN);
-    RADIOLIB_GENERATE_CALLBACK_SPI(RADIOLIB_CB_ARGS_SPI_BEGIN_TRANSACTION);
-    RADIOLIB_GENERATE_CALLBACK_SPI(RADIOLIB_CB_ARGS_SPI_TRANSFER);
-    RADIOLIB_GENERATE_CALLBACK_SPI(RADIOLIB_CB_ARGS_SPI_END_TRANSACTION);
-    RADIOLIB_GENERATE_CALLBACK_SPI(RADIOLIB_CB_ARGS_SPI_END);
-    #else
-    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_SPI_BEGIN);
-    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_SPI_BEGIN_TRANSACTION);
-    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_SPI_TRANSFER);
-    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_SPI_END_TRANSACTION);
-    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_SPI_END);
-    #endif
+      \param data Data to dump.
+
+      \param len Number of bytes to dump.
+    */
+    static void hexdump(uint8_t* data, size_t len);
+
+    /*!
+      \brief Function to dump device registers as hex into the debug port.
+
+      \param start First address to dump.
+
+      \param len Number of bytes to dump.
+    */
+    void regdump(uint8_t start, uint8_t len);
 
 #if !defined(RADIOLIB_GODMODE)
   private:
@@ -426,6 +450,41 @@ class Module {
     bool _useRfSwitch = false;
     RADIOLIB_PIN_TYPE _rxEn = RADIOLIB_NC;
     RADIOLIB_PIN_TYPE _txEn = RADIOLIB_NC;
+
+    #if defined(RADIOLIB_INTERRUPT_TIMING)
+    uint32_t _prevTimingLen = 0;
+    #endif
+
+    // hardware abstraction layer callbacks
+    // this is placed at the end of Module class because the callback generator macros
+    // screw with the private/public access specifiers
+    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_PIN_MODE);
+    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_DIGITAL_WRITE);
+    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_DIGITAL_READ);
+    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_TONE);
+    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_NO_TONE);
+    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_ATTACH_INTERRUPT);
+    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_DETACH_INTERRUPT);
+    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_YIELD);
+    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_DELAY);
+    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_DELAY_MICROSECONDS);
+    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_MILLIS);
+    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_MICROS);
+    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_PULSE_IN);
+
+    #if defined(RADIOLIB_BUILD_ARDUINO)
+    RADIOLIB_GENERATE_CALLBACK_SPI(RADIOLIB_CB_ARGS_SPI_BEGIN);
+    RADIOLIB_GENERATE_CALLBACK_SPI(RADIOLIB_CB_ARGS_SPI_BEGIN_TRANSACTION);
+    RADIOLIB_GENERATE_CALLBACK_SPI(RADIOLIB_CB_ARGS_SPI_TRANSFER);
+    RADIOLIB_GENERATE_CALLBACK_SPI(RADIOLIB_CB_ARGS_SPI_END_TRANSACTION);
+    RADIOLIB_GENERATE_CALLBACK_SPI(RADIOLIB_CB_ARGS_SPI_END);
+    #else
+    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_SPI_BEGIN);
+    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_SPI_BEGIN_TRANSACTION);
+    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_SPI_TRANSFER);
+    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_SPI_END_TRANSACTION);
+    RADIOLIB_GENERATE_CALLBACK(RADIOLIB_CB_ARGS_SPI_END);
+    #endif
 };
 
 #endif
