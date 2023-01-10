@@ -64,6 +64,7 @@
 #endif
 
 #include "modules/AX5x43/AX5243.h"
+#include "modules/AX5x43/AX5043.h"
 #include "modules/CC1101/CC1101.h"
 #include "modules/LLCC68/LLCC68.h"
 #include "modules/nRF24/nRF24.h"

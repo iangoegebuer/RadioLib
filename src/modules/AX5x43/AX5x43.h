@@ -1,5 +1,5 @@
 #if !defined(_RADIOLIB_AX5X43_H)
-#define _RADIOLIB_AX504X_H
+#define _RADIOLIB_AX5X43_H
 
 #include "../../TypeDef.h"
 
@@ -521,6 +521,7 @@
 #define RADIOLIB_AX5X43_PLL_LOCK                                (0x01 << 6)   //  6     6     PLL locked
 #define RADIOLIB_AX5X43_PLL_RNG_ERR                             (0x01 << 5)   //  5     5     PLL ranging error
 #define RADIOLIB_AX5X43_PLL_RNG_START                           (0x01 << 4)   //  4     4     start PLL ranging
+#define RADIOLIB_AX5X43_PLL_RNG_RST                             (0x01 << 3)   //  4     4     start PLL ranging
 #define RADIOLIB_AX5X43_PLL_VCO_RNG_DEFAULT                     (0x08 << 0)   //  3     0     default VCO range (8 if unknown)
 
 // RADIOLIB_AX5X43_REG_DIVERSITY
@@ -700,17 +701,19 @@ class AX5x43: public PhysicalLayer {
 
     // basic methods
 
-    int16_t begin(float freq, float br, float freqDev, float rxBw, int8_t power, uint16_t preambleLength);
+    int16_t begin(float frq, float br, float freqDev, float rxBw, int8_t power, uint16_t preambleLength);
     int16_t reset();
     int16_t standby();
 
     // configuration methods
 
+    float getCrystalFrequency();
     int16_t setFrequency(float freq);
     int16_t setFrequency(float freq, bool forceRanging);
     int16_t setBitRate(float br);
     int16_t setFrequencyDeviation(float freqDev);
     int16_t setPreambleLength(uint16_t preambleLength);
+    int16_t setModulation(uint16_t modulation);
 
     int16_t transmit(uint8_t* data, size_t len, uint8_t addr = 0);
     int16_t receive(uint8_t* data, size_t len);
@@ -738,7 +741,19 @@ class AX5x43: public PhysicalLayer {
     int16_t getChipVersion();
     int16_t config();
     int16_t setMode(uint8_t mode);
+
+    int16_t waitForXtal();
+    int16_t pllRanging();
+
     void writeFifoChunk(uint8_t hdr, uint8_t* data, size_t len);
+
+#ifndef RADIOLIB_GODMODE
+  protected:
+#endif
+    float crystalFreq = RADIOLIB_AX5X43_CRYSTAL_FREQ;
+    uint8_t refEnabled     = 0;
+    uint8_t divEnabled     = 0;
+    uint8_t crystalEnabled = 0;
 
 };
 
