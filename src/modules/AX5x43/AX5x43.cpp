@@ -80,10 +80,10 @@ int16_t AX5x43::begin(float frq, float br, float freqDev, float rxBw, int8_t pow
 
   // TODO: Set power here properly
   state =  mod->SPIsetRegValue(RADIOLIB_AX5X43_REG_TX_PWR_COEFF_A_0,    0xff);
-  state =  mod->SPIsetRegValue(RADIOLIB_AX5X43_REG_TX_PWR_COEFF_A_1,    0x02);
+  state =  mod->SPIsetRegValue(RADIOLIB_AX5X43_REG_TX_PWR_COEFF_A_1,    0x01);
 
   state =  mod->SPIsetRegValue(RADIOLIB_AX5X43_REG_TX_PWR_COEFF_B_0,    0xff);
-  state =  mod->SPIsetRegValue(RADIOLIB_AX5X43_REG_TX_PWR_COEFF_B_1, 0x02);
+  state =  mod->SPIsetRegValue(RADIOLIB_AX5X43_REG_TX_PWR_COEFF_B_1,    0x01);
 
   return(state);
 }
@@ -136,6 +136,9 @@ int16_t AX5x43::waitForXtal() {
     RADIOLIB_DEBUG_PRINTLN(pll_range, HEX);
     mod->delayMicroseconds(100);
   }
+  
+  RADIOLIB_DEBUG_PRINT(F("waitForXtal: "));
+  RADIOLIB_DEBUG_PRINTLN(mod->micros() - start);
 
   return RADIOLIB_ERR_NONE;
 }
@@ -209,6 +212,7 @@ int16_t AX5x43::setBitRate(float br) {
   // TXRATE = [ ( BITRATE / f_XTAL ) * 2^24 + 1/2 ]
   // Bitrate is in K where f_XTAL is in M
   uint32_t brRaw = (br * (uint32_t(1) << RADIOLIB_AX5X43_DIV_EXPONENT)) / getCrystalFrequency() / 1000.0;
+  brRaw |= 1;
 
   // set the registers
   int16_t state = mod->SPIsetRegValue(RADIOLIB_AX5X43_REG_TX_RATE_2, (uint8_t)(brRaw >> 16));
@@ -222,8 +226,12 @@ int16_t AX5x43::setBitRate(float br) {
 }
 
 int16_t AX5x43::setFrequencyDeviation(float freqDev) {
+  // TODO: choose the correct dev here
+  // PhysicalLayer::startDirect sets this to -1;
+  if(freqDev == -1) freqDev = 3.0;
+
   // check valid range
-  RADIOLIB_CHECK_RANGE(freqDev, 0, 125.0, RADIOLIB_ERR_INVALID_BIT_RATE);
+  RADIOLIB_CHECK_RANGE(freqDev, 0, 125.0, RADIOLIB_ERR_INVALID_FREQUENCY_DEVIATION);
 
   // calculate raw value
   // For FSK
@@ -250,24 +258,44 @@ int16_t AX5x43::setPreambleLength(uint16_t preambleLength) {
 
 int16_t AX5x43::transmit(uint8_t* data, size_t len, uint8_t addr) {
   // calculate timeout (5ms + 500 % of expected time-on-air)
-  uint32_t timeout = 5000000 + (uint32_t)((((float)(len * 8)) / (bitRate * 1000.0)) * 5000000.0);
+  uint32_t timeout = 5000000 + (uint32_t)((((float)((len + preambleLen) * 8)) / (bitRate * 1000.0)) * 5000000.0);
 
   // start transmission
   int16_t state = startTransmit(data, len, addr);
   RADIOLIB_ASSERT(state);
 
-  // TODO: Instead of delay implement device IRQ reading if not wired
-  delay(1000);
-
   uint32_t start = mod->micros();
-  while(!mod->digitalRead(mod->getIrq())) {
+  while((mod->SPIgetRegValue(RADIOLIB_AX5X43_REG_RADIO_EVENT_REQ_0) & 0x01) && !(mod->micros() - start > timeout)) mod->yield();
+  // commit FIFO - this tarts the actual transmission
+  mod->SPIwriteRegister(RADIOLIB_AX5X43_REG_FIFO_STAT, RADIOLIB_AX5X43_FIFO_CMD_COMMIT);
+
+  // wait until we're transmitting before starting
+  while(mod->SPIgetRegValue(RADIOLIB_AX5X43_REG_RADIO_STATE) != 0b110 && !(mod->micros() - start > timeout)) mod->yield();
+
+  // in some unlikely situations radio stat goes "idle" before "tx tail"
+  uint8_t stateHold = 0;
+
+  while(1) {
     mod->yield();
 
     if(mod->micros() - start > timeout) {
+      // sometimes the radio internal state machine gets stuck in "tx tail"
+      // this print helps identify when it does
+      RADIOLIB_DEBUG_PRINT(F("Transmit timeout! Radio state: "));
+      RADIOLIB_DEBUG_PRINTLN(mod->SPIgetRegValue(RADIOLIB_AX5X43_REG_RADIO_STATE), BIN);
       finishTransmit();
       return(RADIOLIB_ERR_TX_TIMEOUT);
     }
+    if(!(mod->SPIgetRegValue(RADIOLIB_AX5X43_REG_RADIO_STATE))) {
+      stateHold++;
+    } else {
+      stateHold = 0;
+    }
+    if(stateHold == 20) break;
   }
+
+  RADIOLIB_DEBUG_PRINT(F("Transmit complete! Radio state: "));
+  RADIOLIB_DEBUG_PRINTLN(mod->SPIgetRegValue(RADIOLIB_AX5X43_REG_RADIO_STATE), BIN);
 
   return(finishTransmit());
 }
@@ -278,36 +306,45 @@ int16_t AX5x43::receive(uint8_t* data, size_t len) {
 
 int16_t AX5x43::startTransmit(uint8_t* data, size_t len, uint8_t addr) {
   // clear fifo and set mode to full TX first
-  mod->SPIsetRegValue(RADIOLIB_AX5X43_REG_FIFO_STAT, RADIOLIB_AX5X43_FIFO_CMD_CLEAR_ALL);
+  // as per the data sheet, first set the mode to full tx
+  // wait for SVMODEM bit before clearing the fifo
   int16_t state = setMode(RADIOLIB_AX5X43_PWR_MODE_FULL_TX);
   RADIOLIB_ASSERT(state);
 
-  // write the preamble
-  uint8_t pre[32 + 1];
-  pre[0] = RADIOLIB_AX5X43_FIFO_TX_DATA_UNENC | RADIOLIB_AX5X43_FIFO_DATA_PKTSTART;
-  memset(&pre[1], 0xAA, preambleLen);
-  writeFifoChunk(RADIOLIB_AX5X43_FIFO_CHUNK_HDR_DATA, pre, preambleLen + 1);
+  uint32_t start = mod->micros();
+  // wait for SVMODEM bit
+  while (!(mod->SPIgetRegValue(RADIOLIB_AX5X43_REG_POW_STAT) & RADIOLIB_AX5X43_POW_STAT_SVMODEM) && !(mod->micros() - start > 1000)) mod->yield();
 
-  // write the data
-  data[0] = RADIOLIB_AX5X43_FIFO_TX_DATA_UNENC | RADIOLIB_AX5X43_FIFO_DATA_PKTEND; 
-  writeFifoChunk(RADIOLIB_AX5X43_FIFO_CHUNK_HDR_DATA, data, len);
+  if((mod->micros() - start > 1000)) {
+    finishTransmit();
+    return(RADIOLIB_ERR_TX_TIMEOUT);
+  }
 
-  // wait until crystal is running
   state = waitForXtal();
-
   if(state != RADIOLIB_ERR_NONE) {
     finishTransmit();
     return(state);
   }
 
-  // commit FIFO - this tarts the actual transmission
-  mod->SPIwriteRegister(RADIOLIB_AX5X43_REG_FIFO_STAT, RADIOLIB_AX5X43_FIFO_CMD_COMMIT);
+  mod->SPIsetRegValue(RADIOLIB_AX5X43_REG_FIFO_STAT, RADIOLIB_AX5X43_FIFO_CMD_CLEAR_ALL);
+
+  // write the preamble
+  // TODO: convert this into a fifo repeat message
+  uint8_t pre[32 + 1];
+  memset(pre, 0xAA, preambleLen);
+  writeFifoChunk(RADIOLIB_AX5X43_FIFO_CHUNK_HDR_DATA, pre, preambleLen, RADIOLIB_AX5X43_FIFO_TX_DATA_UNENC | RADIOLIB_AX5X43_FIFO_DATA_PKTSTART);
+
+  // write the data
+  writeFifoChunk(RADIOLIB_AX5X43_FIFO_CHUNK_HDR_DATA, data, len, RADIOLIB_AX5X43_FIFO_TX_DATA_UNENC| RADIOLIB_AX5X43_FIFO_DATA_PKTEND);
+
   return(RADIOLIB_ERR_NONE);
 }
 
 int16_t AX5x43::finishTransmit() {
-  // set mode to standby to disable transmitter/RF switch
-  return(standby());
+  // as per the datasheet power down the transmitter
+  // not doing so seems to increase the chances of the 
+  // internal state machine getting stuck in "tx tail"
+  return(setMode(RADIOLIB_AX5X43_PWR_MODE_POWER_DOWN));
 }
 
 int16_t AX5x43::readData(uint8_t* data, size_t len) {
@@ -323,11 +360,17 @@ int16_t AX5x43::receiveDirect() {
 }
 
 int16_t AX5x43::setDataShaping(uint8_t sh) {
+  if(sh == RADIOLIB_SHAPING_NONE) return 0;
   return(RADIOLIB_ERR_UNSUPPORTED);
 }
 
-int16_t AX5x43::setEncoding(uint8_t encoding) {
-  return(RADIOLIB_ERR_UNSUPPORTED);
+int16_t AX5x43::setEncoding(uint8_t encoding) { 
+
+  if (encoding == RADIOLIB_ENCODING_NRZ) {
+    mod->SPIsetRegValue(RADIOLIB_AX5X43_REG_ENCODING, RADIOLIB_AX5X43_ENC_DIFF_DISABLED | RADIOLIB_AX5X43_ENC_INV_DISABLED);
+  }
+
+  return 0;
 }
 
 size_t AX5x43::getPacketLength(bool update) {
@@ -397,10 +440,14 @@ int16_t AX5x43::setModulation(uint16_t modulation) {
     state |= mod->SPIsetRegValue(RADIOLIB_AX5X43_REG_MODULATION, RADIOLIB_AX5X43_MODULATION_AFSK);
 
     // Mark and space at 2200Hz and 1200Hz
-    state |=  mod->SPIsetRegValue(RADIOLIB_AX5X43_REG_AFSK_MARK_0,     0x14&0xFF);
-    state |=  mod->SPIsetRegValue(RADIOLIB_AX5X43_REG_AFSK_MARK_1,  (0x14>>8)&0xFF);
-    state |=  mod->SPIsetRegValue(RADIOLIB_AX5X43_REG_AFSK_SPACE_0,    0x24);
-    state |=  mod->SPIsetRegValue(RADIOLIB_AX5X43_REG_AFSK_SPACE_1, (0x24>>8)&0xFF);
+    // TODO: caclulate based on freq, the problem is that the resolution at the few bits we need is poor
+    state |=  mod->SPIsetRegValue(RADIOLIB_AX5X43_REG_AFSK_MARK_0,       0x13&0xFF);
+    state |=  mod->SPIsetRegValue(RADIOLIB_AX5X43_REG_AFSK_MARK_1,  (0x13>>8)&0xFF);
+    state |=  mod->SPIsetRegValue(RADIOLIB_AX5X43_REG_AFSK_SPACE_0,           0x23);
+    state |=  mod->SPIsetRegValue(RADIOLIB_AX5X43_REG_AFSK_SPACE_1, (0x23>>8)&0xFF);
+
+    // some radios shift the full fifo bit by bit, some by byte then bit
+    flipBits = 1;
   } else {
     state = RADIOLIB_ERR_UNSUPPORTED;
   }
@@ -413,7 +460,7 @@ int16_t AX5x43::setMode(uint8_t mode) {
   return(mod->SPIsetRegValue(RADIOLIB_AX5X43_REG_PWR_MODE, mode | crystalEnabled | refEnabled, 7, 0, 4, 0xEF));
 }
 
-void AX5x43::writeFifoChunk(uint8_t hdr, uint8_t* data, size_t len) {
+void AX5x43::writeFifoChunk(uint8_t hdr, uint8_t* data, size_t len, uint8_t encoding) {
   // write the header
   mod->SPIwriteRegister(RADIOLIB_AX5X43_REG_FIFO_DATA, hdr);
   if((data == NULL) || (len == 0)) {
@@ -422,13 +469,23 @@ void AX5x43::writeFifoChunk(uint8_t hdr, uint8_t* data, size_t len) {
 
   // optionally, write the data
   // if it is one of the variable length chunks, write the length byte
+  // if it has an encoding, write the encoding
   if((hdr == RADIOLIB_AX5X43_FIFO_CHUNK_HDR_DATA) || (hdr == RADIOLIB_AX5X43_FIFO_CHUNK_HDR_TXPWR)) {
-    mod->SPIwriteRegister(RADIOLIB_AX5X43_REG_FIFO_DATA, len);
+    if(encoding) {
+      mod->SPIwriteRegister(RADIOLIB_AX5X43_REG_FIFO_DATA, len+1);
+      mod->SPIwriteRegister(RADIOLIB_AX5X43_REG_FIFO_DATA, encoding);
+    } else {
+      mod->SPIwriteRegister(RADIOLIB_AX5X43_REG_FIFO_DATA, len);
+    }
   }
 
   // now write the data
   for(size_t i = 0; i < len; i++) {
-    mod->SPIwriteRegister(RADIOLIB_AX5X43_REG_FIFO_DATA, data[i]);
+    // AX5X43 Transmits in bit order recieved, flip bits previously flipped by the library
+    if(flipBits)
+      mod->SPIwriteRegister(RADIOLIB_AX5X43_REG_FIFO_DATA, Module::flipBits(data[i]));
+    else 
+      mod->SPIwriteRegister(RADIOLIB_AX5X43_REG_FIFO_DATA, data[i]);
   }
 }
 

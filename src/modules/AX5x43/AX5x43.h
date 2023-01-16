@@ -745,7 +745,7 @@ class AX5x43: public PhysicalLayer {
     int16_t waitForXtal();
     int16_t pllRanging();
 
-    void writeFifoChunk(uint8_t hdr, uint8_t* data, size_t len);
+    void writeFifoChunk(uint8_t hdr, uint8_t* data, size_t len, uint8_t encoding = 0x0);
 
 #ifndef RADIOLIB_GODMODE
   protected:
@@ -754,6 +754,7 @@ class AX5x43: public PhysicalLayer {
     uint8_t refEnabled     = 0;
     uint8_t divEnabled     = 0;
     uint8_t crystalEnabled = 0;
+    uint8_t flipBits       = 0;
 
 };
 
